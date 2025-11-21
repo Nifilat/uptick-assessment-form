@@ -15,7 +15,7 @@ export default function Page(): React.ReactElement {
       className={`${raleway.variable} font-sans min-h-screen flex items-center justify-center bg-[#F4F7FF] dark:bg-[#071028] text-foreground py-12 px-4`}
     >
       <Box className="w-full max-w-3xl bg-transparent">
-        <AssessmentForm />
+        <AssessmentForm assessmentId="3c30d406-27f4-4038-9cd5-1c4f3385ffd4" />
       </Box>
     </main>
   );
