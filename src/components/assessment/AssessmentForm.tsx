@@ -58,7 +58,7 @@ export default function AssessmentForm({ assessmentId }: { assessmentId: string 
     if (!liveDemoLink.trim()) next.liveDemoLink = "Live demo link is required.";
     else if (!isValidUrl(liveDemoLink)) next.liveDemoLink = "Enter a valid URL for the live demo.";
 
-    if (!comments.trim()) next.comments = "Comments are required.";
+
 
     setErrors(next);
     return Object.keys(next).length === 0;
