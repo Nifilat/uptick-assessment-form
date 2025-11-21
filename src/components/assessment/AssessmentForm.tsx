@@ -24,6 +24,14 @@ type Errors = {
   form?: string;
 };
 
+type SuccessPayload = {
+  message: string;
+  email: string;
+  githubUrl: string;
+  liveDemoUrl: string;
+  comments: string;
+};
+
 export default function AssessmentForm({ assessmentId }: { assessmentId: string }): JSX.Element {
   const [email, setEmail] = useState("");
   const [githubLink, setGithubLink] = useState("");
@@ -32,6 +40,7 @@ export default function AssessmentForm({ assessmentId }: { assessmentId: string 
   const [errors, setErrors] = useState<Errors>({});
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [successData, setSuccessData] = useState<SuccessPayload | null>(null);
 
   // const primaryBlue = "#477BFF";
   const darkNavy = "#000523";
@@ -68,22 +77,25 @@ export default function AssessmentForm({ assessmentId }: { assessmentId: string 
     e?.preventDefault();
 
     setSuccess(false);
+    setSuccessData(null);
     if (!validate()) return;
 
     setSubmitting(true);
     setErrors({});
 
+    const submission = {
+      id: assessmentId,
+      email: email.trim(),
+      githubUrl: githubLink.trim(),
+      liveDemoUrl: liveDemoLink.trim(),
+      comments: comments.trim(),
+    };
+
     try {
       const res = await fetch("/api/assessment-submissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: assessmentId,
-          email: email.trim(),
-          githubUrl: githubLink.trim(),
-          liveDemoUrl: liveDemoLink.trim(),
-          comments: comments.trim()
-        }),
+        body: JSON.stringify(submission),
       });
 
       if (!res.ok) {
@@ -95,6 +107,20 @@ export default function AssessmentForm({ assessmentId }: { assessmentId: string 
       }
 
       // Success
+      const body = (await res.json().catch(() => null)) as { message?: string } | null;
+      const messageFromBackend =
+        body && typeof body.message === "string"
+          ? body.message
+          : "Assessment submitted successfully! We'll review it soon.";
+
+      setSuccessData({
+        message: messageFromBackend,
+        email: submission.email,
+        githubUrl: submission.githubUrl,
+        liveDemoUrl: submission.liveDemoUrl,
+        comments: submission.comments,
+      });
+
       setSuccess(true);
       setEmail("");
       setGithubLink("");
@@ -255,12 +281,33 @@ export default function AssessmentForm({ assessmentId }: { assessmentId: string 
 
             {/* Success message */}
             <div aria-live="polite">
-              {success && (
-                <div className="mt-3 flex items-center gap-3 bg-green-50 text-green-800 px-4 py-2 rounded-md">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
-                    <path d="M20 6L9 17l-5-5" stroke="#065f46" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                  <div className="text-sm">Submission received — thank you! Our team will review your assessment.</div>
+              {success && successData && (
+                <div className="mt-3 bg-green-50 text-green-800 px-4 py-3 rounded-md space-y-3">
+                  <div className="flex items-center gap-3">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <path d="M20 6L9 17l-5-5" stroke="#065f46" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <div className="text-sm">
+                      {successData.message || "Assessment submitted successfully! We'll review it soon."}
+                    </div>
+                  </div>
+
+                  <div className="text-xs md:text-sm text-green-900">
+                    <div>
+                      <span className="font-semibold">Email:</span> {successData.email}
+                    </div>
+                    <div>
+                      <span className="font-semibold">GitHub Repository:</span> {successData.githubUrl}
+                    </div>
+                    <div>
+                      <span className="font-semibold">Live Demo URL:</span> {successData.liveDemoUrl}
+                    </div>
+                    {successData.comments && (
+                      <div>
+                        <span className="font-semibold">Comments:</span> {successData.comments}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

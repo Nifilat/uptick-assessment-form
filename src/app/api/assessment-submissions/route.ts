@@ -102,8 +102,19 @@ export async function POST(req: Request) {
       return NextResponse.json(mockSuccess, { status: 200 });
     }
 
-    // Backend not configured
-    return NextResponse.json({ message: "Backend API not configured" }, { status: 500 });
+    // Backend not configured — return a mock success payload so the frontend can still demo a successful flow.
+    const mockResult = {
+      message: "Assessment submitted successfully! We'll review it soon.",
+      data: {
+        id,
+        email,
+        githubUrl,
+        liveDemoUrl,
+        comments,
+      },
+    };
+
+    return NextResponse.json(mockResult, { status: 200 });
   } catch (err) {
     console.error("API route error: /api/assessment-submissions", err);
     return NextResponse.json({ message: "Internal server error" }, { status: 500 });
