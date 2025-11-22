@@ -6,6 +6,7 @@ export const env = {
 
 export const urls = {
   LOGIN: `${env.API_V1}auth/login`,
+  SUBMIT_ASSESSMENT: (id: string) => `${env.API_V1}assessment/submit/${id}`,
 };
 
 export const queryKeys = {};
