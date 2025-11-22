@@ -1,25 +1,10 @@
 import { NextResponse } from "next/server";
 
 /**
- * POST /api/assessment-submissions
- *
- * - Accepts { email, githubUrl, liveDemoUrl, comments }
- * - Performs basic server-side validation
- * - If BACKEND_API_URL (see env notes below) is set, forwards the request to the real backend.
- * - Otherwise returns a mocked 201 response so frontend can work while backend is not ready.
- *
- * Env notes:
- * - When the backend endpoint is available, set an environment variable in your Next app:
- *     NEXT_PUBLIC_BACKEND_API_URL=https://your-backend.example.com
- *   or (server-only)
- *     BACKEND_API_URL=https://your-backend.example.com
- *
- * - Then replace the forwarding path below with the actual backend route (example: `${backendUrl}/api/assessment-submissions`).
- * - Add any required auth headers when forwarding (Authorization, API keys, etc.).
+ * POST /api/assessment-submissions/[id]
+ * 
+ * Simple proxy to backend - no authentication needed since the backend endpoint is public
  */
-
-// In-memory store for demo purposes (resets on server restart)
-const submittedApplicants = new Set<string>();
 
 const isValidEmail = (v?: unknown) =>
   typeof v === "string" && /^\S+@\S+\.\S+$/.test(v.trim());
@@ -34,12 +19,25 @@ const isValidUrl = (v?: unknown) => {
   }
 };
 
-export async function POST(req: Request) {
+export async function POST(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const { id, email, githubUrl, liveDemoUrl, comments } = body ?? {};
+    const applicantId = params.id;
 
-    // Basic validation
+    // Validate applicant ID format (UUID)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!applicantId || !uuidRegex.test(applicantId)) {
+      return NextResponse.json({ 
+        message: "Invalid submission link. Please use the link provided in your assessment email." 
+      }, { status: 400 });
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const { email, githubUrl, liveDemoUrl, comments } = body ?? {};
+
+    // Validate input
     if (!isValidEmail(email)) {
       return NextResponse.json({ message: "Invalid or missing email" }, { status: 400 });
     }
@@ -49,74 +47,66 @@ export async function POST(req: Request) {
     if (!isValidUrl(liveDemoUrl)) {
       return NextResponse.json({ message: "Invalid or missing live demo URL" }, { status: 400 });
     }
-    // Comments are optional
 
-    // Check for duplicate submission based on email and githubUrl
-    const submissionKey = `${email}-${githubUrl}`;
-    if (submittedApplicants.has(submissionKey)) {
-      return NextResponse.json({ message: "You have already submitted your assessment" }, { status: 400 });
+    // Get backend URL
+    const backendUrl = process.env.NEXT_PUBLIC_BASE_URL;
+
+    if (!backendUrl) {
+      console.error("NEXT_PUBLIC_BASE_URL not configured");
+      return NextResponse.json({
+        message: "System configuration error. Please contact support.",
+      }, { status: 500 });
     }
 
-    // If a backend URL is configured, forward the submission there.
-    const backendUrl =
-      process.env.NEXT_PUBLIC_BACKEND_API_URL ?? process.env.BACKEND_API_URL ?? null;
+    // Submit directly to backend (no auth needed)
+    const submitUrl = `${backendUrl.replace(/\/$/, "")}/api/v1/assessment/submit/${applicantId}`;
 
-    if (backendUrl) {
-      // Forward to the backend endpoint: api/v1/assessment/submit/:applicantId
-      const forwardTo = `${backendUrl.replace(/\/$/, "")}/api/v1/assessment/submit/${id}`;
-
-      // Example headers: For Authorization if backend requires it.
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      //  to include a server-side secret token, add it from env:
-      // if (process.env.BACKEND_API_TOKEN) {
-      //   headers['Authorization'] = `Bearer ${process.env.BACKEND_API_TOKEN}`;
-      // }
-
-      const resp = await fetch(forwardTo, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ email, githubUrl, liveDemoUrl, comments }),
-      });
-
-      const respBody = await resp.json().catch(() => ({}));
-
-      // If backend returns success, return it
-      if (resp.status === 200) {
-        submittedApplicants.add(submissionKey);
-        return NextResponse.json(respBody, { status: resp.status });
-      }
-
-      // If backend has issues, return mock success for presentation
-      const mockSuccess = {
-        code: 200,
-        message: "Assessment submitted successfully! We'll review it soon.",
-        payload: {
-          submittedAt: new Date().toISOString(),
-          githubUrl,
-          liveDemoUrl,
-        },
-        status: true,
-      };
-      return NextResponse.json(mockSuccess, { status: 200 });
-    }
-
-    // Backend not configured — return a mock success payload so the frontend can still demo a successful flow.
-    const mockResult = {
-      message: "Assessment submitted successfully! We'll review it soon.",
-      data: {
-        id,
-        email,
-        githubUrl,
-        liveDemoUrl,
-        comments,
-      },
+    const submissionPayload = {
+      email: email.trim(),
+      githubUrl: githubUrl.trim(),
+      liveDemoUrl: liveDemoUrl.trim(),
+      comments: comments.trim() || undefined,
     };
 
-    return NextResponse.json(mockResult, { status: 200 });
+    console.log(`Submitting assessment for applicant: ${applicantId}`);
+
+    const submissionResp = await fetch(submitUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(submissionPayload),
+    });
+
+    const submissionBody = await submissionResp.json().catch(() => ({}));
+
+    if (!submissionResp.ok) {
+      console.error("Submission failed:", submissionResp.status, submissionBody);
+      
+      if (submissionResp.status === 404) {
+        return NextResponse.json(
+          { message: "Assessment not found or already submitted. Please contact support if you believe this is an error." },
+          { status: 404 }
+        );
+      }
+      
+      return NextResponse.json(
+        { message: submissionBody.message || "Failed to submit assessment. Please try again." },
+        { status: submissionResp.status }
+      );
+    }
+
+    console.log("Assessment submitted successfully");
+
+    return NextResponse.json({
+      message: submissionBody.message || "Assessment submitted successfully! We'll review it soon.",
+      ...submissionBody
+    }, { status: 200 });
+
   } catch (err) {
-    console.error("API route error: /api/assessment-submissions", err);
-    return NextResponse.json({ message: "Internal server error" }, { status: 500 });
+    console.error("API route error: /api/assessment-submissions/[id]", err);
+    return NextResponse.json({ 
+      message: "An unexpected error occurred. Please try again later." 
+    }, { status: 500 });
   }
 }
