@@ -19,15 +19,15 @@ const isValidUrl = (v?: unknown) => {
   }
 };
 
+// FIX: Update params type to Promise<{ id: string }> for Next.js 15
 export async function POST(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // 1. Get the Applicant ID from the URL path
-    // Next.js 15+ requires awaiting params
-    const resolvedParams = await Promise.resolve(params);
-    const applicantId = resolvedParams.id;
+    // In Next.js 15, we must await the params object itself
+    const { id: applicantId } = await params;
 
     // Validate ID format (UUID)
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
