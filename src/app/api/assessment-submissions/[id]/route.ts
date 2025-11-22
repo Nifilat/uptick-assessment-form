@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 
 /**
  * POST /api/assessment-submissions/[id]
- * 
- * Simple proxy to backend - no authentication needed since the backend endpoint is public
+ * * This route handles: /api/assessment-submissions/972956f5-1701...
+ * It extracts the ID (972956f5...) and forwards it to the backend.
  */
 
 const isValidEmail = (v?: unknown) =>
@@ -24,20 +24,23 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const applicantId = params.id;
+    // 1. Get the Applicant ID from the URL path
+    // Next.js 15+ requires awaiting params
+    const resolvedParams = await Promise.resolve(params);
+    const applicantId = resolvedParams.id;
 
-    // Validate applicant ID format (UUID)
+    // Validate ID format (UUID)
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!applicantId || !uuidRegex.test(applicantId)) {
       return NextResponse.json({ 
-        message: "Invalid submission link. Please use the link provided in your assessment email." 
+        message: "Invalid submission link. The ID provided is incorrect." 
       }, { status: 400 });
     }
 
     const body = await req.json().catch(() => ({}));
     const { email, githubUrl, liveDemoUrl, comments } = body ?? {};
 
-    // Validate input
+    // 2. Validate Form Data
     if (!isValidEmail(email)) {
       return NextResponse.json({ message: "Invalid or missing email" }, { status: 400 });
     }
@@ -48,27 +51,29 @@ export async function POST(
       return NextResponse.json({ message: "Invalid or missing live demo URL" }, { status: 400 });
     }
 
-    // Get backend URL
-    const backendUrl = process.env.NEXT_PUBLIC_BASE_URL;
+    // 3. Get Backend URL
+    const backendUrl = 
+      process.env.NEXT_PUBLIC_BACKEND_API_URL || 
+      process.env.BACKEND_API_URL || 
+      process.env.NEXT_PUBLIC_BASE_URL;
 
     if (!backendUrl) {
-      console.error("NEXT_PUBLIC_BASE_URL not configured");
       return NextResponse.json({
-        message: "System configuration error. Please contact support.",
+        message: "System configuration error: Backend URL not set.",
       }, { status: 500 });
     }
 
-    // Submit directly to backend (no auth needed)
+    // 4. Submit to the Backend Endpoint: .../submit/:id
     const submitUrl = `${backendUrl.replace(/\/$/, "")}/api/v1/assessment/submit/${applicantId}`;
 
     const submissionPayload = {
       email: email.trim(),
       githubUrl: githubUrl.trim(),
       liveDemoUrl: liveDemoUrl.trim(),
-      comments: comments.trim() || undefined,
+      comments: comments ? comments.trim() : undefined,
     };
 
-    console.log(`Submitting assessment for applicant: ${applicantId}`);
+    console.log(`Submitting to backend: ${submitUrl}`);
 
     const submissionResp = await fetch(submitUrl, {
       method: "POST",
@@ -81,30 +86,20 @@ export async function POST(
     const submissionBody = await submissionResp.json().catch(() => ({}));
 
     if (!submissionResp.ok) {
-      console.error("Submission failed:", submissionResp.status, submissionBody);
-      
-      if (submissionResp.status === 404) {
-        return NextResponse.json(
-          { message: "Assessment not found or already submitted. Please contact support if you believe this is an error." },
-          { status: 404 }
-        );
-      }
-      
+      console.error("Backend submission failed:", submissionResp.status, submissionBody);
       return NextResponse.json(
-        { message: submissionBody.message || "Failed to submit assessment. Please try again." },
+        { message: submissionBody.message || "Failed to submit assessment." },
         { status: submissionResp.status }
       );
     }
 
-    console.log("Assessment submitted successfully");
-
     return NextResponse.json({
-      message: submissionBody.message || "Assessment submitted successfully! We'll review it soon.",
+      message: submissionBody.message || "Assessment submitted successfully!",
       ...submissionBody
     }, { status: 200 });
 
   } catch (err) {
-    console.error("API route error: /api/assessment-submissions/[id]", err);
+    console.error("API route error:", err);
     return NextResponse.json({ 
       message: "An unexpected error occurred. Please try again later." 
     }, { status: 500 });
